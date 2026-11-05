@@ -136,9 +136,7 @@ end
 
 --- Build the compact context string used in normal mode: file path + current line.
 function M.build_context_normal()
-  local file = vim.fn.expand("%:p")
-  local line = vim.fn.line(".")
-  return string.format("File: %s\nLines: %d\n", file, line)
+  return string.format("File: %s:%d\n", vim.fn.expand("%:p"), vim.fn.line("."))
 end
 
 --- Build the context string for an arbitrary line range.
@@ -152,7 +150,7 @@ function M.build_context_range(start_line, end_line)
   local selection = table.concat(lines, "\n")
   local file = vim.fn.expand("%:p")
   local ft = vim.bo.filetype
-  return string.format("File: %s\nLines: %d-%d\nSelection:\n```%s\n%s\n```\n", file, start_line, end_line, ft, selection)
+  return string.format("File: %s:%d-%d\nSelection:\n```%s\n%s\n```\n", file, start_line, end_line, ft, selection)
 end
 
 --- Build the context string used in visual mode: file path, line range, and selected code.
@@ -170,7 +168,7 @@ function M.build_context_visual()
   local selection = table.concat(lines, "\n")
   local file = vim.fn.expand("%:p")
   local ft = vim.bo.filetype
-  return string.format("File: %s\nLines: %d-%d\nSelection:\n```%s\n%s\n```\n", file, start_line, end_line, ft, selection)
+  return string.format("File: %s:%d-%d\nSelection:\n```%s\n%s\n```\n", file, start_line, end_line, ft, selection)
 end
 
 --- Build a compact reference to the current buffer (path only).
