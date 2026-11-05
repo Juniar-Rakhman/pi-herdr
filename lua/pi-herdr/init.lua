@@ -231,29 +231,45 @@ function M.build_context_this(opts)
   return M.build_context_normal()
 end
 
+--- Capture all context strings from the current editor state before the cursor moves.
+-- This is important because opening the prompt float changes the current buffer/window.
+-- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line } }
+function M.capture_context(opts)
+  opts = opts or {}
+  local range = opts.range
+  local this_ctx
+  if range then
+    this_ctx = M.build_context_range(range[1], range[2])
+  elseif opts.mode == "v" then
+    this_ctx = M.build_context_visual()
+  elseif opts.mode == "n" then
+    this_ctx = M.build_context_normal()
+  else
+    local s, e = visual_range()
+    if s then
+      this_ctx = M.build_context_visual()
+      range = { s, e }
+    else
+      this_ctx = M.build_context_normal()
+    end
+  end
+  return {
+    this = this_ctx,
+    buffer = M.build_context_buffer(),
+    diagnostics = M.build_context_diagnostics(range and range[1], range and range[2]),
+  }
+end
+
 --- Replace context placeholders in a prompt with their compact representations.
 -- Supported placeholders: @this, @buffer, @diagnostics.
 -- @param text string prompt possibly containing placeholders
--- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line } }
+-- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line }, context = captured_context }
 function M.substitute_placeholders(text, opts)
   opts = opts or {}
-  text = text:gsub("@this", function()
-    return M.build_context_this(opts)
-  end)
-  text = text:gsub("@buffer", function()
-    return M.build_context_buffer()
-  end)
-  text = text:gsub("@diagnostics", function()
-    local range = opts.range
-    if range then
-      return M.build_context_diagnostics(range[1], range[2])
-    elseif opts.mode == "v" then
-      local s, e = visual_range()
-      return M.build_context_diagnostics(s, e)
-    else
-      return M.build_context_diagnostics()
-    end
-  end)
+  local ctx = opts.context or M.capture_context(opts)
+  text = text:gsub("@this", ctx.this)
+  text = text:gsub("@buffer", ctx.buffer)
+  text = text:gsub("@diagnostics", ctx.diagnostics)
   return text
 end
 
@@ -323,14 +339,17 @@ local function open_prompt(title, default_text, callback)
 end
 
 --- Ask Pi with an optional prefilled prompt. Placeholders are resolved after editing.
+-- Context is captured before the floating prompt opens so line numbers stay correct.
 -- This is the main opencode-style entry point.
 -- @param prefix string|nil text to prefill in the prompt window
 -- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line } }
 function M.ask(prefix, opts)
   opts = opts or {}
+  -- Snapshot context now; the cursor will move into the prompt float.
+  local snapshot = M.capture_context(opts)
   open_prompt("Ask Pi", prefix or "", function(prompt)
     if not prompt then return end
-    local message = M.substitute_placeholders(prompt, opts)
+    local message = M.substitute_placeholders(prompt, vim.tbl_extend("force", opts, { context = snapshot }))
     find_pi_agent(function(agent, err)
       if err then
         vim.notify("Pi: " .. err, vim.log.levels.ERROR)
