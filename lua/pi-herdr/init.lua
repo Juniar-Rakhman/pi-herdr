@@ -164,14 +164,30 @@ end
 
 --- Build the context string used in visual mode: file path, line range, and column range.
 function M.build_context_visual()
+  -- When called from a visual-mode mapping, the '< and '> marks may not have
+  -- been updated yet. Fall back to the current visual selection bounds.
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
+  if start_pos[2] == 0 or end_pos[2] == 0 then
+    start_pos = vim.fn.getpos("v")
+    end_pos = vim.fn.getpos(".")
+  end
+
   local start_line, end_line = start_pos[2], end_pos[2]
   local start_col, end_col = start_pos[3], end_pos[3]
   if start_line > end_line then
     start_line, end_line = end_line, start_line
     start_col, end_col = end_col, start_col
   end
+
+  -- Clamp line-wise visual selections to valid column bounds.
+  local line_count = vim.api.nvim_buf_line_count(0)
+  if end_line > line_count then end_line = line_count end
+  if end_col > 100000000 then
+    local line = vim.api.nvim_buf_get_lines(0, end_line - 1, end_line, true)[1] or ""
+    end_col = vim.fn.strlen(line)
+  end
+
   local file = vim.fn.expand("%:p")
   return string.format("@%s:%d-%d:%d-%d\n", file, start_line, end_line, start_col, end_col)
 end
@@ -343,13 +359,13 @@ end
 
 --- Ask Pi with an optional prefilled prompt. Placeholders are resolved after editing.
 -- Context is captured before the floating prompt opens so line numbers stay correct.
--- This is the main opencode-style entry point.
+-- A pre-built context snapshot can be passed via opts.context.
 -- @param prefix string|nil text to prefill in the prompt window
--- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line } }
+-- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line }, context = captured_context }
 function M.ask(prefix, opts)
   opts = opts or {}
   -- Snapshot context now; the cursor will move into the prompt float.
-  local snapshot = M.capture_context(opts)
+  local snapshot = opts.context or M.capture_context(opts)
   open_prompt("Ask Pi", prefix or "", function(prompt)
     if not prompt then return end
     local message = M.substitute_placeholders(prompt, vim.tbl_extend("force", opts, { context = snapshot }))
@@ -434,7 +450,11 @@ function M.setup(opts)
 
   if M.config.keymap then
     vim.keymap.set("n", M.config.keymap, function() M.ask("@this: ", { mode = "n" }) end, { silent = true, desc = "Ask Pi" })
-    vim.keymap.set("v", M.config.keymap, function() M.ask("@this: ", { mode = "v" }) end, { silent = true, desc = "Ask Pi selection" })
+    vim.keymap.set("v", M.config.keymap, function()
+      -- Capture visual bounds before the mapping changes mode or buffer.
+      local snapshot = M.capture_context({ mode = "v" })
+      M.ask("@this: ", { mode = "v", context = snapshot })
+    end, { silent = true, desc = "Ask Pi selection" })
   end
 end
 
