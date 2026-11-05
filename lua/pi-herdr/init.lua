@@ -5,7 +5,20 @@ M.config = {
   keymap = "<leader>pa",     -- keybinding to trigger the prompt in normal and visual mode
   focus_after_send = true,   -- whether to focus the Pi agent pane after sending a prompt
   herdr_binary = nil,        -- optional path to the herdr executable; defaults to "herdr"
+  --- Built-in prompt templates. Keys are shown by `M.select()`; values may contain placeholders.
+  prompts = {
+    explain = "Explain @this",
+    fix = "Fix @this",
+    test = "Add tests for @this",
+    document = "Document @this",
+    optimize = "Optimize @this",
+    review = "Review @this",
+    implement = "Implement @this",
+  },
 }
+
+-- State used by the operator motion callback.
+M._operator_prefix = ""
 
 --- Return the configured herdr binary, or fall back to "herdr" if unset.
 local function herdr_binary()
@@ -101,11 +114,45 @@ local function find_pi_agent(callback)
   end)
 end
 
+--- Deliver a fully composed message to a Pi agent.
+-- @param agent table Herdr agent descriptor containing pane_id
+-- @param message string complete prompt to send
+local function deliver(agent, message)
+  vim.uv.spawn(herdr_binary(), {
+    args = { "agent", "prompt", agent.pane_id, message },
+  }, function(code)
+    vim.schedule(function()
+      if code ~= 0 then
+        vim.notify("Pi: failed to send prompt", vim.log.levels.ERROR)
+        return
+      end
+      vim.notify("Pi: prompt sent", vim.log.levels.INFO)
+      if M.config.focus_after_send then
+        vim.uv.spawn(herdr_binary(), { args = { "agent", "focus", agent.pane_id } })
+      end
+    end)
+  end)
+end
+
 --- Build the compact context string used in normal mode: file path + current line.
 function M.build_context_normal()
   local file = vim.fn.expand("%:p")
   local line = vim.fn.line(".")
   return string.format("File: %s\nLines: %d\n", file, line)
+end
+
+--- Build the context string for an arbitrary line range.
+-- @param start_line number
+-- @param end_line number
+function M.build_context_range(start_line, end_line)
+  if start_line > end_line then
+    start_line, end_line = end_line, start_line
+  end
+  local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
+  local selection = table.concat(lines, "\n")
+  local file = vim.fn.expand("%:p")
+  local ft = vim.bo.filetype
+  return string.format("File: %s\nLines: %d-%d\nSelection:\n```%s\n%s\n```\n", file, start_line, end_line, ft, selection)
 end
 
 --- Build the context string used in visual mode: file path, line range, and selected code.
@@ -126,14 +173,99 @@ function M.build_context_visual()
   return string.format("File: %s\nLines: %d-%d\nSelection:\n```%s\n%s\n```\n", file, start_line, end_line, ft, selection)
 end
 
+--- Build a compact reference to the current buffer (path only).
+function M.build_context_buffer()
+  return string.format("File: %s\n", vim.fn.expand("%:p"))
+end
+
+--- Build a compact list of diagnostics for the current buffer or range.
+-- @param range_start number|nil optional start line
+-- @param range_end number|nil optional end line
+function M.build_context_diagnostics(range_start, range_end)
+  local diags = vim.diagnostic.get(0)
+  if range_start and range_end then
+    if range_start > range_end then
+      range_start, range_end = range_end, range_start
+    end
+    diags = vim.tbl_filter(function(d)
+      return d.lnum + 1 >= range_start and d.lnum + 1 <= range_end
+    end, diags)
+  end
+  if #diags == 0 then return "No diagnostics\n" end
+  local parts = { "Diagnostics:\n" }
+  for _, d in ipairs(diags) do
+    local line = d.lnum + 1
+    local col = d.col + 1
+    local severity_names = { "ERROR", "WARN", "INFO", "HINT" }
+    local severity = severity_names[d.severity] or "?"
+    parts[#parts + 1] = string.format("- line %d:%d [%s] %s\n", line, col, severity, d.message:gsub("\n", " "))
+  end
+  return table.concat(parts, "")
+end
+
+--- Return the current visual selection line range, or nil if none is meaningful.
+local function visual_range()
+  local mode = vim.fn.visualmode()
+  if mode == "" then return nil end
+  local start_pos = vim.fn.getpos("'<")
+  local end_pos = vim.fn.getpos("'>")
+  if start_pos[2] == 0 or end_pos[2] == 0 then return nil end
+  return start_pos[2], end_pos[2]
+end
+
+--- Build the default @this context based on current state or an explicit range.
+-- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line } }
+function M.build_context_this(opts)
+  opts = opts or {}
+  if opts.range then
+    return M.build_context_range(opts.range[1], opts.range[2])
+  end
+  if opts.mode == "v" then
+    return M.build_context_visual()
+  end
+  -- Normal mode or auto-detect with no active selection.
+  if opts.mode == nil then
+    local s, e = visual_range()
+    if s then return M.build_context_visual() end
+  end
+  return M.build_context_normal()
+end
+
+--- Replace context placeholders in a prompt with their compact representations.
+-- Supported placeholders: @this, @buffer, @diagnostics.
+-- @param text string prompt possibly containing placeholders
+-- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line } }
+function M.substitute_placeholders(text, opts)
+  opts = opts or {}
+  text = text:gsub("@this", function()
+    return M.build_context_this(opts)
+  end)
+  text = text:gsub("@buffer", function()
+    return M.build_context_buffer()
+  end)
+  text = text:gsub("@diagnostics", function()
+    local range = opts.range
+    if range then
+      return M.build_context_diagnostics(range[1], range[2])
+    elseif opts.mode == "v" then
+      local s, e = visual_range()
+      return M.build_context_diagnostics(s, e)
+    else
+      return M.build_context_diagnostics()
+    end
+  end)
+  return text
+end
+
 --- Open a single-line floating input window for typing the prompt.
 -- @param title string shown in the window title
+-- @param default_text string|nil initial text in the input
 -- @param callback function(text|nil) called with the submitted text, or nil if cancelled
-local function open_prompt(title, callback)
+local function open_prompt(title, default_text, callback)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].filetype = "pi-herdr-prompt"
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { default_text or "" })
 
   local width = math.min(80, math.floor(vim.o.columns * 0.8))
   local height = 1
@@ -152,6 +284,8 @@ local function open_prompt(title, callback)
     title_pos = "center",
   })
 
+  -- Place cursor at the end of the default text and enter insert mode.
+  vim.api.nvim_win_set_cursor(win, { 1, vim.fn.strlen(default_text or "") + 1 })
   vim.cmd("startinsert!")
 
   -- Close the floating window and clean up the scratch buffer.
@@ -188,62 +322,97 @@ local function open_prompt(title, callback)
   })
 end
 
---- Send the final message to the matched Pi agent via herdr.
--- Optionally focuses the agent pane after a successful send.
-local function send_prompt(agent, prompt, context)
-  local message = context .. prompt
-  vim.uv.spawn(herdr_binary(), {
-    args = { "agent", "prompt", agent.pane_id, message },
-  }, function(code)
-    vim.schedule(function()
-      if code ~= 0 then
-        vim.notify("Pi: failed to send prompt", vim.log.levels.ERROR)
-        return
-      end
-      vim.notify("Pi: prompt sent", vim.log.levels.INFO)
-      if M.config.focus_after_send then
-        vim.uv.spawn(herdr_binary(), { args = { "agent", "focus", agent.pane_id } })
-      end
-    end)
-  end)
-end
-
---- Generic ask flow: build context, open prompt, find agent, send message.
--- @param context_builder function returning the context string to prepend to the prompt
-local function ask(context_builder)
-  local context = context_builder()
-  open_prompt("Ask Pi", function(prompt)
+--- Ask Pi with an optional prefilled prompt. Placeholders are resolved after editing.
+-- This is the main opencode-style entry point.
+-- @param prefix string|nil text to prefill in the prompt window
+-- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line } }
+function M.ask(prefix, opts)
+  opts = opts or {}
+  open_prompt("Ask Pi", prefix or "", function(prompt)
     if not prompt then return end
+    local message = M.substitute_placeholders(prompt, opts)
     find_pi_agent(function(agent, err)
       if err then
         vim.notify("Pi: " .. err, vim.log.levels.ERROR)
         return
       end
-      send_prompt(agent, prompt, context)
+      deliver(agent, message)
     end)
   end)
 end
 
+--- Send a prompt directly to Pi without opening the input window.
+-- Placeholders in text are resolved before sending.
+-- @param text string prompt to send
+-- @param opts table|nil { mode = "n"|"v", range = { start_line, end_line } }
+function M.prompt(text, opts)
+  opts = opts or {}
+  if not text or text == "" then return end
+  local message = M.substitute_placeholders(text, opts)
+  find_pi_agent(function(agent, err)
+    if err then
+      vim.notify("Pi: " .. err, vim.log.levels.ERROR)
+      return
+    end
+    deliver(agent, message)
+  end)
+end
+
+--- Select a built-in prompt and ask Pi with it.
+function M.select()
+  local names = vim.tbl_keys(M.config.prompts)
+  table.sort(names)
+  vim.ui.select(names, { prompt = "Pi prompt:" }, function(choice)
+    if choice then M.ask(M.config.prompts[choice] .. " ") end
+  end)
+end
+
+--- Operator function: select a motion/textobject, then ask Pi about that range.
+-- Use in an expr mapping: `vim.keymap.set("n", "go", function() return require("pi-herdr").operator("@this: ") end, { expr = true })`
+-- @param prefix string|nil text to prefill after the range is selected
+function M.operator(prefix)
+  M._operator_prefix = prefix or ""
+  vim.go.operatorfunc = "v:lua.require'pi-herdr'._operator_callback"
+  return "g@"
+end
+
+--- Callback invoked by Neovim's operatorfunc after a motion is chosen.
+-- This must be a public module function so v:lua can call it.
+function M._operator_callback(type)
+  local start_line = vim.api.nvim_buf_get_mark(0, "[")[1]
+  local end_line = vim.api.nvim_buf_get_mark(0, "]")[1]
+  -- For visual selections triggered via operator, fall back to visual marks.
+  if not start_line or start_line == 0 then start_line = vim.fn.getpos("'<")[2] end
+  if not end_line or end_line == 0 then end_line = vim.fn.getpos("'>")[2] end
+  M.ask(M._operator_prefix or "", { range = { start_line, end_line } })
+end
+
 --- Public entry point for normal mode: prompt with current file/line context.
 function M.ask_normal()
-  ask(M.build_context_normal)
+  M.ask("", { mode = "n" })
 end
 
 --- Public entry point for visual mode: prompt with selection context.
 function M.ask_visual()
-  ask(M.build_context_visual)
+  M.ask("", { mode = "v" })
 end
 
 --- Initialize the plugin. Merge user opts, create commands, and register keymaps.
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
-  vim.api.nvim_create_user_command("PiAsk", M.ask_normal, {})
-  vim.api.nvim_create_user_command("PiAskVisual", M.ask_visual, { range = true })
+  vim.api.nvim_create_user_command("PiAsk", function() M.ask("@this: ", { mode = "n" }) end, {})
+  vim.api.nvim_create_user_command("PiAskVisual", function(args)
+    M.ask("@this: ", { mode = "v", range = { args.line1, args.line2 } })
+  end, { range = true })
+  vim.api.nvim_create_user_command("PiPrompt", function(args)
+    M.prompt(args.args, { mode = vim.fn.mode() == "v" and "v" or "n" })
+  end, { nargs = 1 })
+  vim.api.nvim_create_user_command("PiSelect", M.select, {})
 
   if M.config.keymap then
-    vim.keymap.set("n", M.config.keymap, M.ask_normal, { silent = true, desc = "Ask Pi" })
-    vim.keymap.set("v", M.config.keymap, M.ask_visual, { silent = true, desc = "Ask Pi selection" })
+    vim.keymap.set("n", M.config.keymap, function() M.ask("@this: ", { mode = "n" }) end, { silent = true, desc = "Ask Pi" })
+    vim.keymap.set("v", M.config.keymap, function() M.ask("@this: ", { mode = "v" }) end, { silent = true, desc = "Ask Pi selection" })
   end
 end
 
