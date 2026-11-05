@@ -3,7 +3,7 @@
 Minimal Neovim plugin that routes prompts to an already-running [Pi](https://github.com/earendil-works/pi-coding-agent) coding agent managed by [Herdr](https://github.com/ctbaum/herdr).
 
 - Sends compact context only (`file:line` in normal mode, `file:start-end` + selected text in visual mode)
-- Enforces **exact canonicalized CWD** matching against `herdr agent list`
+- Enforces **exact canonicalized CWD** matching against `herdr agent list`; if multiple agents match, prompts the user to choose
 - Never starts a new Pi process or terminal
 - Floating prompt UI: `Enter` submits, `Esc`/`q` cancels
 

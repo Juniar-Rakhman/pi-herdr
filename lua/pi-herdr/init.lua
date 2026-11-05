@@ -105,10 +105,28 @@ local function find_pi_agent(callback)
       end
       if #matches == 0 then
         callback(nil, "No Pi agent found for " .. cwd)
-      elseif #matches > 1 then
-        callback(nil, "Multiple Pi agents match " .. cwd)
-      else
+      elseif #matches == 1 then
         callback(matches[1], nil)
+      else
+        -- More than one matching agent: let the user pick one.
+        local items = {}
+        for _, a in ipairs(matches) do
+          items[#items + 1] = a
+        end
+        vim.ui.select(items, {
+          prompt = "Select Pi agent:",
+          format_item = function(a)
+            return string.format("%s  (%s)", a.pane_id or "?", a.foreground_cwd or a.cwd or "")
+          end,
+        }, function(choice)
+          vim.schedule(function()
+            if choice then
+              callback(choice, nil)
+            else
+              callback(nil, "No Pi agent selected")
+            end
+          end)
+        end)
       end
     end)
   end)
