@@ -80,8 +80,9 @@ local function herdr_spawn(args, callback)
   end)
 end
 
---- Find the single Pi agent whose working directory matches Neovim's cwd.
--- Errors out if no agent matches or if more than one matches (exact-CWD policy).
+--- Find a Pi agent whose working directory matches Neovim's cwd.
+-- If exactly one matches, it is returned directly. If multiple match, the user
+-- is prompted to pick one. Errors out only when no agent matches.
 -- @param callback function(agent, err) called with the matched agent or an error string
 local function find_pi_agent(callback)
   local cwd = M.canonical_path(vim.fn.getcwd())
@@ -108,24 +109,17 @@ local function find_pi_agent(callback)
       elseif #matches == 1 then
         callback(matches[1], nil)
       else
-        -- More than one matching agent: let the user pick one.
-        local items = {}
-        for _, a in ipairs(matches) do
-          items[#items + 1] = a
-        end
-        vim.ui.select(items, {
+        vim.ui.select(matches, {
           prompt = "Select Pi agent:",
           format_item = function(a)
             return string.format("%s  (%s)", a.pane_id or "?", a.foreground_cwd or a.cwd or "")
           end,
         }, function(choice)
-          vim.schedule(function()
-            if choice then
-              callback(choice, nil)
-            else
-              callback(nil, "No Pi agent selected")
-            end
-          end)
+          if choice then
+            callback(choice, nil)
+          else
+            callback(nil, "No Pi agent selected")
+          end
         end)
       end
     end)
@@ -164,29 +158,22 @@ function M.build_context_range(start_line, end_line)
   if start_line > end_line then
     start_line, end_line = end_line, start_line
   end
-  local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
-  local selection = table.concat(lines, "\n")
   local file = vim.fn.expand("%:p")
-  local ft = vim.bo.filetype
-  return string.format("@%s:%d-%d\nSelection:\n```%s\n%s\n```\n", file, start_line, end_line, ft, selection)
+  return string.format("@%s:%d-%d\n", file, start_line, end_line)
 end
 
---- Build the context string used in visual mode: file path, line range, and selected code.
+--- Build the context string used in visual mode: file path, line range, and column range.
 function M.build_context_visual()
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
-  local start_line = start_pos[2]
-  local end_line = end_pos[2]
+  local start_line, end_line = start_pos[2], end_pos[2]
+  local start_col, end_col = start_pos[3], end_pos[3]
   if start_line > end_line then
     start_line, end_line = end_line, start_line
+    start_col, end_col = end_col, start_col
   end
-  local mode = vim.fn.visualmode()
-  if mode == "" then mode = "V" end
-  local lines = vim.fn.getregion(start_pos, end_pos, { type = mode })
-  local selection = table.concat(lines, "\n")
   local file = vim.fn.expand("%:p")
-  local ft = vim.bo.filetype
-  return string.format("@%s:%d-%d\nSelection:\n```%s\n%s\n```\n", file, start_line, end_line, ft, selection)
+  return string.format("@%s:%d-%d:%d-%d\n", file, start_line, end_line, start_col, end_col)
 end
 
 --- Build a compact reference to the current buffer (path only).

@@ -1,11 +1,13 @@
 # pi-herdr
 
+> Lightweight bridge between Neovim and a running Pi coding agent via Herdr.
+
 Minimal Neovim plugin that routes prompts to an already-running [Pi](https://github.com/earendil-works/pi-coding-agent) coding agent managed by [Herdr](https://github.com/ctbaum/herdr).
 
-- Sends compact context only (`file:line` in normal mode, `file:start-end` + selected text in visual mode)
-- Enforces **exact canonicalized CWD** matching against `herdr agent list`; if multiple agents match, prompts the user to choose
+- Sends compact context only (`@file:line` in normal mode, `@file:start-end:startcol-endcol` in visual mode)
+- Matches agents by **exact canonicalized CWD** against `herdr agent list`; prompts you to pick when multiple match
 - Never starts a new Pi process or terminal
-- Floating prompt UI: `Enter` submits, `Esc`/`q` cancels
+- Minimal floating prompt: `Enter` sends, `Esc`/`q` cancels
 
 ## Requirements
 
@@ -27,20 +29,44 @@ Minimal Neovim plugin that routes prompts to an already-running [Pi](https://git
 
 ```lua
 require("pi-herdr").setup({
-  keymap = "<leader>Oa",     -- normal + visual mode mapping
+  keymap = "<leader>pa",     -- normal + visual mode mapping
   focus_after_send = true,   -- focus the Pi agent pane after sending
   herdr_binary = nil,        -- path to herdr binary; defaults to "herdr"
 })
 ```
 
+## Context placeholders
+
+Type these directly in the floating prompt or in custom prompt templates:
+
+| Placeholder | Expands to |
+|---|---|
+| `@this` | Current file/line, or selected range with columns |
+| `@buffer` | Full path of the current buffer |
+| `@diagnostics` | Diagnostics for the current buffer or selection |
+
 ## Commands
 
-- `:PiAsk` — ask with normal-mode context
-- `:PiAskVisual` — ask with visual selection context
+| Command | Usage |
+|---|---|
+| `:PiAsk` | Ask Pi with normal-mode context |
+| `:PiAskVisual` | Ask Pi with visual selection context |
+| `:PiPrompt <text>` | Send a prompt directly, without opening the float |
+| `:PiSelect` | Pick a built-in prompt template |
 
 ## Keybindings
 
 | Key | Mode | Action |
 |---|---|---|
-| `<leader>Oa` | Normal | Ask Pi about current file/line |
-| `<leader>Oa` | Visual | Ask Pi with selection context |
+| `<leader>pa` | Normal | Ask Pi about current file/line |
+| `<leader>pa` | Visual | Ask Pi with selection context |
+
+## Operator motion
+
+You can also use `pi-herdr` as an operator to ask about a motion/text-object:
+
+```lua
+vim.keymap.set("n", "go", function()
+  return require("pi-herdr").operator("@this: ")
+end, { expr = true, desc = "Ask Pi about motion" })
+```
