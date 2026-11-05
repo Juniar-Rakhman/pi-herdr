@@ -61,12 +61,3 @@ Type these directly in the floating prompt or in custom prompt templates:
 | `<leader>pa` | Normal | Ask Pi about current file/line |
 | `<leader>pa` | Visual | Ask Pi with selection context |
 
-## Operator motion
-
-You can also use `pi-herdr` as an operator to ask about a motion/text-object:
-
-```lua
-vim.keymap.set("n", "go", function()
-  return require("pi-herdr").operator("@this: ")
-end, { expr = true, desc = "Ask Pi about motion" })
-```

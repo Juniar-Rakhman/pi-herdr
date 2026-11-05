@@ -17,9 +17,6 @@ M.config = {
   },
 }
 
--- State used by the operator motion callback.
-M._operator_prefix = ""
-
 --- Return the configured herdr binary, or fall back to "herdr" if unset.
 local function herdr_binary()
   local bin = M.config.herdr_binary
@@ -403,26 +400,6 @@ function M.select()
   vim.ui.select(names, { prompt = "Pi prompt:" }, function(choice)
     if choice then M.ask(M.config.prompts[choice] .. " ") end
   end)
-end
-
---- Operator function: select a motion/textobject, then ask Pi about that range.
--- Use in an expr mapping: `vim.keymap.set("n", "go", function() return require("pi-herdr").operator("@this: ") end, { expr = true })`
--- @param prefix string|nil text to prefill after the range is selected
-function M.operator(prefix)
-  M._operator_prefix = prefix or ""
-  vim.go.operatorfunc = "v:lua.require'pi-herdr'._operator_callback"
-  return "g@"
-end
-
---- Callback invoked by Neovim's operatorfunc after a motion is chosen.
--- This must be a public module function so v:lua can call it.
-function M._operator_callback(type)
-  local start_line = vim.api.nvim_buf_get_mark(0, "[")[1]
-  local end_line = vim.api.nvim_buf_get_mark(0, "]")[1]
-  -- For visual selections triggered via operator, fall back to visual marks.
-  if not start_line or start_line == 0 then start_line = vim.fn.getpos("'<")[2] end
-  if not end_line or end_line == 0 then end_line = vim.fn.getpos("'>")[2] end
-  M.ask(M._operator_prefix or "", { range = { start_line, end_line } })
 end
 
 --- Public entry point for normal mode: prompt with current file/line context.
