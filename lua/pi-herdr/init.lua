@@ -182,18 +182,16 @@ function M.build_context_visual()
     start_col, end_col = end_col, start_col
   end
 
-  -- nvim_buf_get_mark returns 0-based columns; convert to 1-based for display.
+  local file = vim.fn.expand("%:p")
+
+  -- Line-wise selection: omit column info.
   if kind == "V" then
-    -- Line-wise selection: cover the full lines.
-    start_col = 1
-    local last_line = vim.api.nvim_buf_get_lines(buf, end_line - 1, end_line, true)[1] or ""
-    end_col = vim.fn.strlen(last_line)
-  else
-    start_col = start_col + 1
-    end_col = end_col + 1
+    return string.format("@%s:%d-%d\n", file, start_line, end_line)
   end
 
-  local file = vim.fn.expand("%:p")
+  -- Character or block selection: include 1-based columns.
+  start_col = start_col + 1
+  end_col = end_col + 1
   return string.format("@%s:%d-%d:%d-%d\n", file, start_line, end_line, start_col, end_col)
 end
 
