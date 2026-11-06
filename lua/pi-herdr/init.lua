@@ -340,10 +340,25 @@ function M.substitute_placeholders(text, opts)
 end
 
 --- Open a single-line floating input window for typing the prompt.
+-- Uses snacks.input when available, otherwise falls back to a custom float.
 -- @param title string shown in the window title
 -- @param default_text string|nil initial text in the input
 -- @param callback function(text|nil) called with the submitted text, or nil if cancelled
 local function open_prompt(title, default_text, callback)
+  local ok, snacks = pcall(require, "snacks")
+  if ok and snacks.input then
+    snacks.input.input({
+      prompt = title,
+      default = default_text or "",
+      icon = "π",
+      icon_hl = "SnacksInputIcon",
+    }, function(value)
+      local text = value and vim.trim(value) or ""
+      callback(text ~= "" and text or nil)
+    end)
+    return
+  end
+
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].filetype = "pi-herdr-prompt"
