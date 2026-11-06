@@ -170,19 +170,19 @@ function M.build_context_visual()
     end_pos = vim.fn.getpos(".")
   end
 
-  local start_line, end_line = start_pos[2], end_pos[2]
-  local start_col, end_col = start_pos[3], end_pos[3]
+  local mode = vim.fn.visualmode()
+  if mode == "" then mode = "v" end
+
+  -- getregionpos gives precise selection bounds for the current visual mode.
+  local region = vim.fn.getregionpos(start_pos, end_pos, { type = mode })
+  local first = region[1] and region[1][1] or start_pos
+  local last = region[#region] and region[#region][2] or end_pos
+
+  local start_line, end_line = first[2], last[2]
+  local start_col, end_col = first[3], last[3]
   if start_line > end_line then
     start_line, end_line = end_line, start_line
     start_col, end_col = end_col, start_col
-  end
-
-  -- Clamp line-wise visual selections to valid column bounds.
-  local line_count = vim.api.nvim_buf_line_count(0)
-  if end_line > line_count then end_line = line_count end
-  if end_col > 100000000 then
-    local line = vim.api.nvim_buf_get_lines(0, end_line - 1, end_line, true)[1] or ""
-    end_col = vim.fn.strlen(line)
   end
 
   local file = vim.fn.expand("%:p")
