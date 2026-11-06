@@ -8,6 +8,7 @@ Minimal Neovim plugin that routes prompts to an already-running [Pi](https://git
 - Matches agents by **exact canonicalized CWD** against `herdr agent list`; prompts you to pick when multiple match
 - Never starts a new Pi process or terminal
 - Minimal floating prompt: `Enter` sends, `Esc`/`q` cancels
+- Automatically uses `snacks.input` when available (with π icon), falling back to a custom float
 
 ## Requirements
 
@@ -34,6 +35,18 @@ require("pi-herdr").setup({
   focus_after_send = true,       -- focus the Pi agent pane after sending
   submit_after_send = false,     -- false types the prompt in Pi without submitting
   herdr_binary = nil,            -- path to herdr binary; defaults to "herdr"
+})
+```
+
+## Integrations
+
+### snacks.input
+
+If you have [snacks.nvim](https://github.com/folke/snacks.nvim) installed with `input` enabled, pi-herdr will use it for the prompt UI and show a π icon. Otherwise it falls back to a minimal custom float.
+
+```lua
+require("snacks").setup({
+  input = { enabled = true },
 })
 ```
 
