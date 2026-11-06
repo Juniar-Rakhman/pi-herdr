@@ -29,10 +29,10 @@ Minimal Neovim plugin that routes prompts to an already-running [Pi](https://git
 
 ```lua
 require("pi-herdr").setup({
-  keymap = "<leader>pa",       -- normal + visual mode mapping
-  buffer_keymap = "<leader>Ob", -- ask about the current buffer only
-  focus_after_send = true,     -- focus the Pi agent pane after sending
-  herdr_binary = nil,          -- path to herdr binary; defaults to "herdr"
+  keymap = "<leader>pa",        -- normal + visual mode mapping
+  buffer_keymap = "<leader>pb", -- ask about the current buffer only
+  focus_after_send = true,      -- focus the Pi agent pane after sending
+  herdr_binary = nil,           -- path to herdr binary; defaults to "herdr"
 })
 ```
 
@@ -62,5 +62,5 @@ Type these directly in the floating prompt or in custom prompt templates:
 |---|---|---|
 | `<leader>pa` | Normal | Ask Pi about current file/line |
 | `<leader>pa` | Visual | Ask Pi with selection context |
-| `<leader>Ob` | Normal | Ask Pi about the current buffer |
+| `<leader>pb` | Normal | Ask Pi about the current buffer |
 
