@@ -160,29 +160,37 @@ function M.build_context_range(start_line, end_line)
 end
 
 --- Build the context string used in visual mode: file path, line range, and column range.
+-- Mirrors opencode.nvim's approach: exit visual mode so the '< and '> marks are
+-- set, then read them with nvim_buf_get_mark (0-based columns).
 function M.build_context_visual()
-  -- When called from a visual-mode mapping, the '< and '> marks may not have
-  -- been updated yet. Fall back to the current visual selection bounds.
-  local start_pos = vim.fn.getpos("'<")
-  local end_pos = vim.fn.getpos("'>")
-  if start_pos[2] == 0 or end_pos[2] == 0 then
-    start_pos = vim.fn.getpos("v")
-    end_pos = vim.fn.getpos(".")
+  -- Exit visual mode first so '< and '> marks are populated reliably.
+  if vim.fn.mode():match("[vV\22]") then
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "x", true)
   end
 
-  local mode = vim.fn.visualmode()
-  if mode == "" then mode = "v" end
+  local buf = vim.api.nvim_get_current_buf()
+  local kind = vim.fn.visualmode()
+  local from = { vim.api.nvim_buf_get_mark(buf, "<") }
+  local to = { vim.api.nvim_buf_get_mark(buf, ">") }
 
-  -- getregionpos gives precise selection bounds for the current visual mode.
-  local region = vim.fn.getregionpos(start_pos, end_pos, { type = mode })
-  local first = region[1] and region[1][1] or start_pos
-  local last = region[#region] and region[#region][2] or end_pos
+  local start_line, start_col = from[1], from[2]
+  local end_line, end_col = to[1], to[2]
 
-  local start_line, end_line = first[2], last[2]
-  local start_col, end_col = first[3], last[3]
-  if start_line > end_line then
+  -- Normalize reversed selections.
+  if start_line > end_line or (start_line == end_line and start_col > end_col) then
     start_line, end_line = end_line, start_line
     start_col, end_col = end_col, start_col
+  end
+
+  -- nvim_buf_get_mark returns 0-based columns; convert to 1-based for display.
+  if kind == "V" then
+    -- Line-wise selection: cover the full lines.
+    start_col = 1
+    local last_line = vim.api.nvim_buf_get_lines(buf, end_line - 1, end_line, true)[1] or ""
+    end_col = vim.fn.strlen(last_line)
+  else
+    start_col = start_col + 1
+    end_col = end_col + 1
   end
 
   local file = vim.fn.expand("%:p")
