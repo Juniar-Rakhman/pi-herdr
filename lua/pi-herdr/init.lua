@@ -170,8 +170,8 @@ function M.build_context_visual()
 
   local buf = vim.api.nvim_get_current_buf()
   local kind = vim.fn.visualmode()
-  local from = { vim.api.nvim_buf_get_mark(buf, "<") }
-  local to = { vim.api.nvim_buf_get_mark(buf, ">") }
+  local from = vim.api.nvim_buf_get_mark(buf, "<")
+  local to = vim.api.nvim_buf_get_mark(buf, ">")
 
   local start_line, start_col = from[1], from[2]
   local end_line, end_col = to[1], to[2]
