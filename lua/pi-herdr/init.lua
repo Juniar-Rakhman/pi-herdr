@@ -5,6 +5,7 @@ M.config = {
   keymap = "<leader>pa", -- keybinding to trigger the prompt in normal and visual mode
   buffer_keymap = "<leader>pb", -- keybinding to ask about the current buffer only
   focus_after_send = true, -- whether to focus the Pi agent pane after sending a prompt
+  commit_after_send = true, -- whether to submit the prompt immediately; false types it for editing
   herdr_binary = nil, -- optional path to the herdr executable; defaults to "herdr"
   --- Built-in prompt templates. Keys are shown by `M.select()`; values may contain placeholders.
   prompts = {
@@ -132,19 +133,45 @@ local function find_pi_agent(callback)
   end)
 end
 
+--- Split a string into individual herdr send-keys arguments.
+-- Spaces become "Space"; newlines are ignored (input is single-line).
+local function message_to_keys(message)
+  local keys = {}
+  for i = 1, #message do
+    local ch = message:sub(i, i)
+    if ch == " " then
+      keys[#keys + 1] = "Space"
+    elseif ch ~= "\n" and ch ~= "\r" then
+      keys[#keys + 1] = ch
+    end
+  end
+  return keys
+end
+
 --- Deliver a fully composed message to a Pi agent.
 -- @param agent table Herdr agent descriptor containing pane_id
 -- @param message string complete prompt to send
 local function deliver(agent, message)
+  local args
+  if M.config.commit_after_send then
+    args = { "agent", "prompt", agent.pane_id, message }
+  else
+    args = { "agent", "send-keys", agent.pane_id }
+    local keys = message_to_keys(message)
+    for _, k in ipairs(keys) do
+      args[#args + 1] = k
+    end
+  end
+
   vim.uv.spawn(herdr_binary(), {
-    args = { "agent", "prompt", agent.pane_id, message },
+    args = args,
   }, function(code)
     vim.schedule(function()
       if code ~= 0 then
         vim.notify("Pi: failed to send prompt", vim.log.levels.ERROR)
         return
       end
-      vim.notify("Pi: prompt sent", vim.log.levels.INFO)
+      vim.notify(M.config.commit_after_send and "Pi: prompt sent" or "Pi: prompt typed for editing", vim.log.levels.INFO)
       if M.config.focus_after_send then
         vim.uv.spawn(herdr_binary(), { args = { "agent", "focus", agent.pane_id } })
       end
