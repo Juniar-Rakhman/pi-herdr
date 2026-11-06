@@ -32,7 +32,7 @@ require("pi-herdr").setup({
   keymap = "<leader>pa",         -- normal + visual mode mapping
   buffer_keymap = "<leader>pb",  -- ask about the current buffer only
   focus_after_send = true,       -- focus the Pi agent pane after sending
-  commit_after_send = true,      -- false types the prompt in Pi without submitting
+  submit_after_send = false,     -- false types the prompt in Pi without submitting
   herdr_binary = nil,            -- path to herdr binary; defaults to "herdr"
 })
 ```

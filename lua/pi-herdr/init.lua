@@ -5,7 +5,7 @@ M.config = {
   keymap = "<leader>pa", -- keybinding to trigger the prompt in normal and visual mode
   buffer_keymap = "<leader>pb", -- keybinding to ask about the current buffer only
   focus_after_send = true, -- whether to focus the Pi agent pane after sending a prompt
-  commit_after_send = true, -- whether to submit the prompt immediately; false types it for editing
+  submit_after_send = false, -- whether to submit the prompt immediately; false types it for editing
   herdr_binary = nil, -- optional path to the herdr executable; defaults to "herdr"
   --- Built-in prompt templates. Keys are shown by `M.select()`; values may contain placeholders.
   prompts = {
@@ -153,7 +153,7 @@ end
 -- @param message string complete prompt to send
 local function deliver(agent, message)
   local args
-  if M.config.commit_after_send then
+  if M.config.submit_after_send then
     args = { "agent", "prompt", agent.pane_id, message }
   else
     args = { "agent", "send-keys", agent.pane_id }
@@ -171,7 +171,7 @@ local function deliver(agent, message)
         vim.notify("Pi: failed to send prompt", vim.log.levels.ERROR)
         return
       end
-      vim.notify(M.config.commit_after_send and "Pi: prompt sent" or "Pi: prompt typed for editing", vim.log.levels.INFO)
+      vim.notify(M.config.submit_after_send and "Pi: prompt sent" or "Pi: prompt typed for editing", vim.log.levels.INFO)
       if M.config.focus_after_send then
         vim.uv.spawn(herdr_binary(), { args = { "agent", "focus", agent.pane_id } })
       end
