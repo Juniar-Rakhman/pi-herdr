@@ -438,7 +438,10 @@ function M.setup(opts)
     vim.keymap.set("v", M.config.keymap, function()
       -- Capture visual bounds before the mapping changes mode or buffer.
       local snapshot = M.capture_context({ mode = "v" })
-      M.ask("@this: ", { mode = "v", context = snapshot })
+      -- Prefill the prompt with the selected range, e.g. "@this 1-12:1-10 : ".
+      local range = snapshot.this:match("@[^:]+:([%d%-:]+)")
+      local prefix = range and ("@this " .. range .. " : ") or "@this: "
+      M.ask(prefix, { mode = "v", context = snapshot })
     end, { silent = true, desc = "Ask Pi selection" })
   end
 end
