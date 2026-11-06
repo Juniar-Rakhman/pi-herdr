@@ -2,9 +2,10 @@ local M = {}
 
 --- Default configuration. Users can override these values by passing opts to setup().
 M.config = {
-  keymap = "<leader>pa",     -- keybinding to trigger the prompt in normal and visual mode
-  focus_after_send = true,   -- whether to focus the Pi agent pane after sending a prompt
-  herdr_binary = nil,        -- optional path to the herdr executable; defaults to "herdr"
+  keymap = "<leader>pa",       -- keybinding to trigger the prompt in normal and visual mode
+  buffer_keymap = "<leader>Ob", -- keybinding to ask about the current buffer only
+  focus_after_send = true,     -- whether to focus the Pi agent pane after sending a prompt
+  herdr_binary = nil,          -- optional path to the herdr executable; defaults to "herdr"
   --- Built-in prompt templates. Keys are shown by `M.select()`; values may contain placeholders.
   prompts = {
     explain = "Explain @this",
@@ -418,6 +419,12 @@ function M.ask_visual()
   M.ask("", { mode = "v" })
 end
 
+--- Public entry point for buffer mode: prompt with only the current buffer path.
+function M.ask_buffer()
+  local snapshot = M.capture_context({ mode = "n" })
+  M.ask("@buffer: ", { mode = "n", context = snapshot })
+end
+
 --- Initialize the plugin. Merge user opts, create commands, and register keymaps.
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
@@ -426,6 +433,7 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("PiAskVisual", function(args)
     M.ask("@this: ", { mode = "v", range = { args.line1, args.line2 } })
   end, { range = true })
+  vim.api.nvim_create_user_command("PiAskBuffer", M.ask_buffer, {})
   vim.api.nvim_create_user_command("PiPrompt", function(args)
     M.prompt(args.args, { mode = vim.fn.mode() == "v" and "v" or "n" })
   end, { nargs = 1 })
@@ -438,6 +446,9 @@ function M.setup(opts)
       local snapshot = M.capture_context({ mode = "v" })
       M.ask("@this: ", { mode = "v", context = snapshot })
     end, { silent = true, desc = "Ask Pi selection" })
+  end
+  if M.config.buffer_keymap then
+    vim.keymap.set("n", M.config.buffer_keymap, M.ask_buffer, { silent = true, desc = "Ask Pi about buffer" })
   end
 end
 
